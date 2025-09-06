@@ -52,11 +52,17 @@ app.post('/api/test', async (req, res) => {
         
         if (message.toLowerCase().includes('error')) {
             // Search codebase
+            console.log('GitHub Token available:', !!process.env.GITHUB_TOKEN);
+            console.log('Searching repo: singhdeep8262/tstt-bot');
+            console.log('Search query:', message);
+            
             const results = await searchGithubCode(
                 'singhdeep8262/tstt-bot', // Extract repo name from GITHUB_REPO
                 message,
                 process.env.GITHUB_TOKEN
             );
+            
+            console.log('Search results count:', results.length);
             
             if (results.length > 0) {
                 response = `I found ${results.length} possible match(es) in your codebase:\n`;
