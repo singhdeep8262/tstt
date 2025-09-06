@@ -10,102 +10,93 @@ const app = express();
 // Add middleware to parse JSON requests
 app.use(express.json());
 
-// For local development, allow empty credentials to bypass authentication
+// Production-ready Bot Framework Adapter with proper authentication
 const adapter = new BotFrameworkAdapter({
-    appId: process.env.MICROSOFT_APP_ID || '',
-    appPassword: process.env.MICROSOFT_APP_PASSWORD || ''
+    appId: process.env.MICROSOFT_APP_ID,
+    appPassword: process.env.MICROSOFT_APP_PASSWORD
 });
 
-// Error handler for the adapter
+// Validate required environment variables for production
+if (!process.env.MICROSOFT_APP_ID || !process.env.MICROSOFT_APP_PASSWORD) {
+    console.error('ERROR: Missing required environment variables MICROSOFT_APP_ID or MICROSOFT_APP_PASSWORD');
+    if (process.env.NODE_ENV === 'production') {
+        process.exit(1);
+    }
+}
+
+// Enhanced error handler for production
 adapter.onTurnError = async (context, error) => {
-    console.error(`\n [onTurnError] unhandled error: ${ error }`);
-    await context.sendTraceActivity(
-        'OnTurnError Trace',
-        `${ error }`,
-        'https://www.botframework.com/schemas/error',
-        'TurnError'
-    );
-    await context.sendActivity('The bot encountered an error or bug.');
+    console.error(`[${new Date().toISOString()}] Bot error:`, error);
+    
+    // Send trace activity only in development
+    if (process.env.NODE_ENV !== 'production') {
+        await context.sendTraceActivity(
+            'OnTurnError Trace',
+            `${ error }`,
+            'https://www.botframework.com/schemas/error',
+            'TurnError'
+        );
+    }
+    
+    // Send user-friendly error message
+    await context.sendActivity('I encountered an issue processing your request. Please try again.');
 };
 
 const bot = new TeamsBot();
 
-// Add a simple GET endpoint for testing
-app.get('/api/messages', (req, res) => {
-    res.json({ 
-        message: 'Bot is running! This endpoint accepts POST requests for Teams messages.',
+// Health check endpoint for Azure monitoring
+app.get('/health', (req, res) => {
+    res.status(200).json({
         status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({
+        name: 'Teams Bot',
+        status: 'running',
+        version: '1.0.0',
         timestamp: new Date().toISOString()
     });
 });
 
-// Add a test endpoint to simulate bot functionality without Teams authentication
-app.post('/api/test', async (req, res) => {
-    try {
-        const { message } = req.body;
-        
-        if (!message) {
-            return res.status(400).json({ error: 'Message is required' });
-        }
-
-        let response;
-        
-        if (message.toLowerCase().includes('error')) {
-            // Search codebase
-            console.log('GitHub Token available:', !!process.env.GITHUB_TOKEN);
-            console.log('Searching repo: singhdeep8262/tstt-bot');
-            console.log('Search query:', message);
-            
-            const results = await searchGithubCode(
-                'singhdeep8262/tstt-bot', // Extract repo name from GITHUB_REPO
-                message,
-                process.env.GITHUB_TOKEN
-            );
-            
-            console.log('Search results count:', results.length);
-            
-            if (results.length > 0) {
-                response = `I found ${results.length} possible match(es) in your codebase:\n`;
-                results.slice(0, 3).forEach((result, index) => {
-                    response += `${index + 1}. ${result.name} - ${result.html_url}\n`;
-                });
-                response += '\nAnalyzing with AI...';
-                
-                // Optionally analyze with AI
-                try {
-                    const aiSuggestion = await analyzeErrorWithAI(message, results[0].name, process.env.OPENAI_KEY);
-                    response += `\n\nAI Suggestion: ${aiSuggestion}`;
-                } catch (aiError) {
-                    response += '\n\nAI analysis temporarily unavailable.';
-                }
-            } else {
-                response = "Sorry, I couldn't find a related file in your codebase.";
-            }
-        } else {
-            response = "Send me an error message and I'll search your codebase!";
-        }
-        
-        res.json({ 
-            response,
-            timestamp: new Date().toISOString()
-        });
-        
-    } catch (error) {
-        console.error('Test endpoint error:', error);
-        res.status(500).json({ 
-            error: 'Internal server error',
-            details: error.message 
-        });
-    }
-});
-
+// Main bot endpoint for Microsoft Teams
 app.post('/api/messages', (req, res) => {
     adapter.processActivity(req, res, async (context) => {
-        await bot.run(context);
+        try {
+            await bot.run(context);
+        } catch (error) {
+            console.error(`[${new Date().toISOString()}] Error processing bot activity:`, error);
+            throw error;
+        }
     });
 });
 
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully');
+    process.exit(0);
+});
+
+// Azure App Service uses PORT environment variable
 const port = process.env.PORT || 3978;
-app.listen(port, () => {
-    console.log(`Bot is listening on port ${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`[${new Date().toISOString()}] Teams Bot started successfully`);
+    console.log(`Server listening on port ${port}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Health check available at: /health`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+    console.error(`[${new Date().toISOString()}] Server error:`, error);
 });
