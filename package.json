@@ -1,0 +1,16 @@
+{
+  "name": "my-teams-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "A Microsoft Teams bot that checks GitHub codebase with AI support",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@microsoft/teams-ai": "^1.0.0",
+    "botbuilder": "^4.22.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "node-fetch": "^2.6.0"
+  }
+}
